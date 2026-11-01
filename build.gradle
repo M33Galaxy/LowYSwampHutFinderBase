@@ -1,0 +1,249 @@
+plugins {
+    id 'base'
+}
+
+group = 'project.lowyswamphut'
+version = '2.0.2'
+
+/*
+ * LowYSwampHutFinderBase owns every line of native code:
+ *
+ *   src/main.c          standalone CLI (scan / hut / selftest, --out writes /tp lines)
+ *   src/jni_bridge.c    JNI bridge for project.NativePhase1 / project.NativePhase2
+ *   src/*.c / *.h       phase 1 + phase 2 engine (the only implementation)
+ *   jni/generated/      JNI headers owned by this repository (contract with the GUI)
+ *   CMakeLists.txt      native build (CLI + JNI DLL)
+ *
+ * Artifacts consumed by the LowYSwampHut Java module:
+ *
+ *   :lowyswamphutfinderbase:copyNativeArtifacts -> build/native/LowYSwampHutFinderBase.dll
+ *   :lowyswamphutfinderbase:copyCliArtifact     -> build/cli/LowYSwampHutFinderBase-cli.exe
+ *
+ * The directory is also buildable completely on its own:
+ *
+ *   powershell -ExecutionPolicy Bypass -File build_cli.ps1
+ *   powershell -ExecutionPolicy Bypass -File build_jni.ps1
+ *
+ * or with CMake directly:
+ *
+ *   cmake -S . -B build/cmake -G Ninja -DCMAKE_BUILD_TYPE=Release
+ *   cmake --build build/cmake
+ */
+
+def buildRoot = layout.buildDirectory.get().asFile
+def cmakeBuildDir = file("$buildRoot/gradle-cmake")
+def nativeOutDir = file("$buildRoot/native")
+def cliOutDir = file("$buildRoot/cli")
+
+def msysRoot = System.getenv('MSYS2_ROOT') ?: 'C:\\msys64'
+def toolDirs = [
+        file("$msysRoot/ucrt64/bin"),
+        file("$msysRoot/mingw64/bin"),
+        file("$msysRoot/usr/bin")
+]
+
+def findTool = { String name ->
+    def found = toolDirs.collect { new File(it, name) }.find { it.isFile() }
+    return found
+}
+
+def cmakeExe = findTool('cmake.exe')
+def ninjaExe = findTool('ninja.exe')
+def gccExe = findTool('gcc.exe')
+def msysBin = toolDirs.find { new File(it, 'gcc.exe').isFile() }
+
+def skipNativeBuild = providers.gradleProperty('skipNativeBuild')
+        .map { it.toBoolean() }
+        .getOrElse(false)
+
+def resolveJavaHome = {
+    def candidates = []
+    def runtimeHome = System.getProperty('java.home')
+    if (runtimeHome) candidates << file(runtimeHome)
+    def envHome = System.getenv('JAVA_HOME')
+    if (envHome) candidates << file(envHome)
+    candidates.addAll([
+            file('C:/Program Files/Java/jdk-17'),
+            file('C:/Program Files/Java/jdk-21'),
+            file('C:/Program Files/Eclipse Adoptium/jdk-17'),
+            file('C:/Program Files/Eclipse Adoptium/jdk-21')
+    ])
+    def valid = candidates.find { it != null && new File(it, 'include/jni.h').isFile() }
+    if (valid == null) {
+        throw new GradleException(
+                'A JDK with include/jni.h is required to build the JNI library. '
+                        + 'Set JAVA_HOME to a JDK 17+ directory.')
+    }
+    return valid.absolutePath
+}
+
+def requireNativeTools = {
+    if (cmakeExe == null) {
+        throw new GradleException(
+                "cmake.exe not found. Expected it under ${msysRoot}\\ucrt64\\bin, "
+                        + "${msysRoot}\\mingw64\\bin or ${msysRoot}\\usr\\bin. "
+                        + 'Install MSYS2 UCRT64 (pacman -S mingw-w64-ucrt-x86_64-cmake ninja).')
+    }
+    if (gccExe == null) {
+        throw new GradleException(
+                "gcc.exe not found. Expected it under ${msysRoot}\\ucrt64\\bin or ${msysRoot}\\mingw64\\bin. "
+                        + 'Install MSYS2 UCRT64 (pacman -S mingw-w64-ucrt-x86_64-gcc).')
+    }
+    if (ninjaExe == null) {
+        throw new GradleException(
+                "ninja.exe not found. Expected it under ${msysRoot}\\ucrt64\\bin. "
+                        + 'Install it with: pacman -S mingw-w64-ucrt-x86_64-ninja')
+    }
+}
+
+def nativePath = {
+    def paths = toolDirs.collect { it.absolutePath }
+    def inherited = System.getenv('PATH')
+    if (inherited) paths << inherited
+    return paths.join(File.pathSeparator)
+}
+
+tasks.register('checkNativeSources') {
+    group = 'verification'
+    description = 'Verifies the native sources and the checked-in JNI contract headers are present'
+    doLast {
+        def required = [
+                'CMakeLists.txt',
+                'src/main.c',
+                'src/jni_bridge.c',
+                'src/eval.h',
+                'src/search.h',
+                'jni/generated/project_NativePhase1.h',
+                'jni/generated/project_NativePhase2.h',
+                'build_cli.ps1',
+                'build_jni.ps1'
+        ]
+        def missing = required.findAll { !file(it).exists() }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                    'LowYSwampHutFinderBase is incomplete. Missing: ' + missing.join(', '))
+        }
+    }
+}
+
+tasks.register('configureNative', Exec) {
+    group = 'build'
+    description = 'Configure the LowYSwampHutFinderBase CMake build (Ninja + MSYS2 gcc)'
+    dependsOn checkNativeSources
+    inputs.file('CMakeLists.txt')
+    inputs.files(fileTree('src') { include '**/*.c', '**/*.h' })
+    outputs.file("$cmakeBuildDir/CMakeCache.txt")
+
+    doFirst {
+        requireNativeTools()
+        cmakeBuildDir.mkdirs()
+        environment 'PATH', nativePath()
+        environment 'JAVA_HOME', resolveJavaHome()
+        commandLine cmakeExe.absolutePath,
+                '-S', projectDir.absolutePath,
+                '-B', cmakeBuildDir.absolutePath,
+                '-G', 'Ninja',
+                '-DCMAKE_BUILD_TYPE=Release',
+                "-DCMAKE_C_COMPILER=${gccExe.absolutePath}",
+                "-DJAVA_HOME=${resolveJavaHome()}"
+    }
+}
+
+tasks.register('buildNativeMsys2', Exec) {
+    group = 'build'
+    description = 'Build LowYSwampHutFinderBase-cli.exe and LowYSwampHutFinderBase.dll with CMake/Ninja'
+    dependsOn configureNative
+    onlyIf { !skipNativeBuild }
+    outputs.upToDateWhen { false }
+
+    doFirst {
+        requireNativeTools()
+        cmakeBuildDir.mkdirs()
+        environment 'PATH', nativePath()
+        environment 'JAVA_HOME', resolveJavaHome()
+        commandLine cmakeExe.absolutePath,
+                '--build', cmakeBuildDir.absolutePath,
+                '--config', 'Release',
+                '--parallel'
+    }
+}
+
+tasks.register('copyNativeArtifacts') {
+    group = 'build'
+    description = 'Ensure LowYSwampHutFinderBase.dll is in build/native'
+    dependsOn buildNativeMsys2
+    outputs.dir(nativeOutDir)
+    outputs.upToDateWhen { false }
+
+    doLast {
+        nativeOutDir.mkdirs()
+        def candidates = [
+                new File(cmakeBuildDir, 'bin/LowYSwampHutFinderBase.dll'),
+                new File(cmakeBuildDir, 'bin/libLowYSwampHutFinderBase.so'),
+                new File(cmakeBuildDir, 'bin/libLowYSwampHutFinderBase.dylib')
+        ]
+        def built = candidates.find { it.isFile() }
+        if (built == null) {
+            throw new GradleException(
+                    "JNI library missing after the CMake build. Looked for: ${candidates.join(', ')}. "
+                            + 'Check that JAVA_HOME points at a JDK with include/jni.h and that the '
+                            + 'LowYSwampHutFinderBase_jni target was built.')
+        }
+        copy {
+            from built
+            into nativeOutDir
+        }
+        def copied = new File(nativeOutDir, built.name)
+        if (!copied.isFile()) {
+            throw new GradleException("Failed to copy ${built} to ${copied}")
+        }
+        logger.lifecycle("Native artifact ready: ${copied}")
+    }
+}
+
+tasks.register('copyCliArtifact') {
+    group = 'build'
+    description = 'Ensure LowYSwampHutFinderBase-cli.exe is in build/cli'
+    dependsOn buildNativeMsys2
+    outputs.dir(cliOutDir)
+    outputs.upToDateWhen { false }
+
+    doLast {
+        cliOutDir.mkdirs()
+        def candidates = [
+                new File(cmakeBuildDir, 'bin/LowYSwampHutFinderBase-cli.exe'),
+                new File(cmakeBuildDir, 'bin/LowYSwampHutFinderBase-cli')
+        ]
+        def built = candidates.find { it.isFile() }
+        if (built == null) {
+            throw new GradleException(
+                    "Standalone CLI missing after the CMake build. Looked for: ${candidates.join(', ')}. "
+                            + 'Build target LowYSwampHutFinderBase-cli failed?')
+        }
+        copy {
+            from built
+            into cliOutDir
+        }
+        def copied = new File(cliOutDir, built.name)
+        if (!copied.isFile()) {
+            throw new GradleException("Failed to copy ${built} to ${copied}")
+        }
+        logger.lifecycle("Standalone CLI ready: ${copied}")
+    }
+}
+
+tasks.register('buildNativeCli') {
+    group = 'build'
+    description = 'Alias for copyCliArtifact (standalone exe)'
+    dependsOn copyCliArtifact
+}
+
+tasks.register('buildJni') {
+    group = 'build'
+    description = 'Alias for copyNativeArtifacts (JNI DLL)'
+    dependsOn copyNativeArtifacts
+}
+
+tasks.named('assemble') {
+    dependsOn copyNativeArtifacts, copyCliArtifact
+}

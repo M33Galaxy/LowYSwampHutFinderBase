@@ -1,0 +1,9 @@
+# Keep every file byte-for-byte. The C sources are LF; the README is CRLF.
+# Do not let Git normalize line endings (the engine is byte-sensitive).
+* -text
+
+*.dll  binary
+*.exe  binary
+*.zip  binary
+*.ttf  binary
+*.jar  binary
