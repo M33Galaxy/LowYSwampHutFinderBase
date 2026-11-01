@@ -19,3 +19,7 @@
 result.txt
 hits.txt
 *.local
+
+# IDE（IntelliJ IDEA）本地配置
+.idea/
+*.iml
