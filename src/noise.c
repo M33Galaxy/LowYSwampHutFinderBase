@@ -11,12 +11,15 @@
 
 #include "noise_table.h"
 
-/* MC PerlinNoiseSampler.GRADIENTS（已由 Java dump 校验） */
-const int LYSH_GRADIENTS[16][3] = {
-    { 1,  1,  0}, {-1,  1,  0}, { 1, -1,  0}, {-1, -1,  0},
-    { 1,  0,  1}, {-1,  0,  1}, { 1,  0, -1}, {-1,  0, -1},
-    { 0,  1,  1}, { 0, -1,  1}, { 0,  1, -1}, { 0, -1, -1},
-    { 1,  1,  0}, { 0, -1,  1}, {-1,  1,  0}, { 0, -1, -1}
+/* MC PerlinNoiseSampler.GRADIENTS（已由 Java dump 校验）
+ * 直接存 double：grad() 里不再需要 (double)g[i] 转换。一个样本 8 个角点 × 3 次
+ * int→double，原来每样本白付 24 次；改成 double 表后与原来逐位等价（±1/0 的
+ * 整数→double 转换是精确的，求和顺序不变），只是省掉这些转换。 */
+const double LYSH_GRADIENTS[16][3] = {
+    { 1.0,  1.0,  0.0}, {-1.0,  1.0,  0.0}, { 1.0, -1.0,  0.0}, {-1.0, -1.0,  0.0},
+    { 1.0,  0.0,  1.0}, {-1.0,  0.0,  1.0}, { 1.0,  0.0, -1.0}, {-1.0,  0.0, -1.0},
+    { 0.0,  1.0,  1.0}, { 0.0, -1.0,  1.0}, { 0.0,  1.0, -1.0}, { 0.0, -1.0, -1.0},
+    { 1.0,  1.0,  0.0}, { 0.0, -1.0,  1.0}, {-1.0,  1.0,  0.0}, { 0.0, -1.0, -1.0}
 };
 
 /* MC 的 SKIP_COUNT 魔数。注意：PerlinNoiseSampler 的构造实际只消耗 259 次 RNG
@@ -50,8 +53,8 @@ static inline double lerp3(double dx, double dy, double dz,
 }
 
 static inline double grad(int hash, double x, double y, double z) {
-    const int *g = LYSH_GRADIENTS[hash & 15];
-    return (double)g[0] * x + (double)g[1] * y + (double)g[2] * z;
+    const double *g = LYSH_GRADIENTS[hash & 15];
+    return g[0] * x + g[1] * y + g[2] * z;
 }
 static inline int get_gradient(const lysh_perlin *p, int i) {
     return p->perm[i & 255] & 255;
