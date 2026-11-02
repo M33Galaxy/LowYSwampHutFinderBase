@@ -206,7 +206,7 @@ const lysh_perlin *lysh_octave_legacy_get(const lysh_octave_legacy *o, int i);
  * InterpolatedNoiseSampler 也必须用它（不要在别处重写，避免两条路径漂移）。 */
 double lysh_maintain_precision(double v);
 
-/* 供测试：MC 的 16 项梯度表 */
-extern const int LYSH_GRADIENTS[16][3];
+/* 供测试：MC 的 16 项梯度表（存 double，梯度分量只会是 -1/0/1，转换精确） */
+extern const double LYSH_GRADIENTS[16][3];
 
 #endif /* LYSH_NOISE_H */
