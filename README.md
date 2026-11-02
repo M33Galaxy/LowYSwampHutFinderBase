@@ -1,7 +1,7 @@
 # LowYSwampHutFinderBase — LowYSwampHut 的 C 内核技术文档
 
-> **版本：2.0.2**（C 内核与 Java 产品同号；`LowYSwampHutFinderBase-cli --help` 的 banner、
-> `NativePhase1/2.coreVersion()` 均报 `LowYSwampHutFinderBase 2.0.2`）。
+> **版本：2.0.3**（C 内核与 Java 产品同号；`LowYSwampHutFinderBase-cli --help` 的 banner、
+> `NativePhase1/2.coreVersion()` 均报 `LowYSwampHutFinderBase 2.0.3`）。
 > **默认 Minecraft 版本：26.2**（不写 `--version` 就是 26.2，见 §0.0）。
 > **陷阱日志见 §6**（52 条字节码/浮点陷阱；只留结论与规格常数，取证过程已压缩）。
 >

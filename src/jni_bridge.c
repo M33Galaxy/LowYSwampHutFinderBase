@@ -103,7 +103,7 @@
 JNIEXPORT jstring JNICALL
 Java_project_NativePhase1_coreVersion(JNIEnv *env, jclass cls) {
     (void)cls;
-    return (*env)->NewStringUTF(env, "LowYSwampHutFinderBase 2.0.2 (lysh core; phase1: climate + cave ladder + continentalness + floodedness; phase2: exact footprint height + aquifer)");
+    return (*env)->NewStringUTF(env, "LowYSwampHutFinderBase 2.0.3 (lysh core; phase1: climate + cave ladder + continentalness + floodedness; phase2: exact footprint height + aquifer)");
 }
 
 /* ------------------------------------------------------------------ */
@@ -311,5 +311,5 @@ Java_project_NativePhase2_gradeIntsPerHit(JNIEnv *env, jclass cls) {
 JNIEXPORT jstring JNICALL
 Java_project_NativePhase2_coreVersion(JNIEnv *env, jclass cls) {
     (void)cls;
-    return (*env)->NewStringUTF(env, "LowYSwampHutFinderBase 2.0.2 (lysh core; phase1+phase2 end-to-end: exact footprint avg height + aquifer flood judgment)");
+    return (*env)->NewStringUTF(env, "LowYSwampHutFinderBase 2.0.3 (lysh core; phase1+phase2 end-to-end: exact footprint avg height + aquifer flood judgment)");
 }
